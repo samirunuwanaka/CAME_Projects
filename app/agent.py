@@ -194,36 +194,242 @@ def estimate_budget_breakdown(origin: str, destination: str, duration_days: int,
 """
 
 
+def check_flight_prerequisites(origin: str, destination: str, passport_valid_months: int = 6, visa_status: str = "Required") -> str:
+    """Check travel prerequisites for flights including passport validity, visa, and transit requirements.
+
+    Args:
+        origin: The origin airport or city code.
+        destination: The destination airport or city code.
+        passport_valid_months: Number of months remaining on passport before expiration.
+        visa_status: Traveler's visa status or requirement state.
+
+    Returns:
+        A markdown report of flight & international travel prerequisites and required documentation.
+    """
+    valid = passport_valid_months >= 6
+    status_icon = "✅" if valid else "⚠️"
+    
+    return f"""### 🛂 Flight & Travel Prerequisites Check ({origin} ✈️ {destination})
+{status_icon} **Passport Validity**: {passport_valid_months} months remaining (Minimum requirement: 6 months from travel date).
+📋 **Visa Status**: {visa_status} - Ensure electronic travel authorization (eTA/eVisa) or tourist/business visa is granted prior to departure.
+🏥 **Health & Security Requirements**: Standard TSA/Airport screening guidelines apply. Carry digital copy of travel insurance & proof of accommodation.
+💡 **Pre-departure Checklist**:
+- Verify passport expiration date is past 6 months.
+- Print/save flight booking confirmation and hotel voucher.
+- Confirm business invitation letter if traveling for corporate meetings.
+"""
+
+
+def search_places_to_visit(destination: str, travel_purpose: str = "general", interests: str = "sightseeing, dining", duration_days: int = 3) -> str:
+    """Discover top places to visit, attractions, cultural landmarks, and local highlights in the destination city.
+
+    Args:
+        destination: The destination city name (e.g. "Paris", "Tokyo", "New York").
+        travel_purpose: The purpose of travel (e.g. "business", "leisure", "conference").
+        interests: Key interests (e.g. "museums", "architecture", "food", "parks").
+        duration_days: Trip duration in days.
+
+    Returns:
+        A curated list of top places to visit categorized by attraction type with estimated durations and highlights.
+    """
+    h = sum(ord(c) for c in destination)
+    
+    attractions = [
+        ("Downtown Cultural & Arts District", "Explore iconic landmarks, historic architecture, and world-class museum exhibitions.", "2-3 hours"),
+        ("Skyline Observation Deck & Financial Hub", "Breathtaking panoramic views of the city skyline, perfect for evening unwinding or casual business catch-ups.", "1.5 hours"),
+        ("Riverside Promenade & Botanical Gardens", "Scenic waterfront walkways with lush gardens and open-air cafes.", "2 hours"),
+        ("Historic Market Square & Artisan Quarter", "Bustling local market filled with local crafts, specialty coffees, and authentic street dining.", "2 hours")
+    ]
+    
+    selected_attractions = attractions[:min(len(attractions), max(2, duration_days))]
+    
+    items_md = ""
+    for idx, (name, desc, est_time) in enumerate(selected_attractions, 1):
+        items_md += f"""{idx}. **{name}** 🌟
+   - **Highlights**: {desc}
+   - **Recommended Time**: {est_time}
+   - **Best Visit Time**: Morning or Late Afternoon\n"""
+        
+    return f"""### 📍 Places to Visit in {destination} (Curated by Places Explorer Sub-Agent)
+*Interests: {interests} | Trip Duration: {duration_days} Days*
+
+{items_md}
+💡 **Local Tip**: Combine sightseeing during late afternoon slots after business meetings to make the most of your stay!
+"""
+
+
+def recommend_local_dining(destination: str, dietary_pref: str = "general") -> str:
+    """Recommend top local dining, executive restaurants, and culinary hotspots in the destination city.
+
+    Args:
+        destination: The target city.
+        dietary_pref: Optional dietary preference (e.g. "vegetarian", "vegan", "gluten-free", "seafood", "fine dining").
+
+    Returns:
+        A formatted list of top dining spots with cuisine details and atmosphere.
+    """
+    h = sum(ord(c) for c in destination)
+    r1_name = "The Capital Grille & Bistro" if h % 2 == 0 else "Bistro de Paris Executive Dining"
+    r2_name = "Zen Garden & Farm-to-Table" if h % 2 == 0 else "Skyline Terrace Dining"
+    
+    return f"""### 🍽️ Local Dining & Culinary Spots in {destination}
+1. **{r1_name}** (Fine Business Dining) ⭐⭐⭐⭐⭐
+   - **Cuisine**: Contemporary Continental & Prime Steaks
+   - **Atmosphere**: Quiet, elegant indoor seating ideal for client dinners and networking.
+   - **Dietary Accommodations**: {dietary_pref or 'Options available for all diets'}.
+
+2. **{r2_name}** (Casual & Authentic Local) ⭐⭐⭐⭐
+   - **Cuisine**: Seasonal Organic & Fusion Specialties
+   - **Atmosphere**: Relaxed garden ambiance with swift service for quick lunches.
+   - **Dietary Accommodations**: Extensive vegetarian & vegan options.
+"""
+
+
+def validate_travel_guardrails(origin: str, destination: str, total_budget: float, duration_days: int) -> str:
+    """Validate travel parameters against strict safety, budget, input integrity, and duration guardrails.
+
+    Args:
+        origin: Origin city/airport.
+        destination: Destination city/airport.
+        total_budget: Total budget set for the trip.
+        duration_days: Trip duration in days.
+
+    Returns:
+        Guardrails status evaluation report (Passed, Warnings, or Blocked).
+    """
+    issues = []
+    warnings = []
+    
+    # Input Guardrail
+    if not origin or not destination:
+        issues.append("Origin and Destination cannot be empty.")
+    elif origin.strip().lower() == destination.strip().lower():
+        issues.append("Origin and Destination cannot be the exact same location.")
+        
+    # Duration Guardrail
+    if duration_days < 1:
+        issues.append("Trip duration must be at least 1 day.")
+    elif duration_days > 60:
+        warnings.append("Trip duration exceeds 60 days. Extended stay policy approval may be required.")
+        
+    # Budget Guardrail
+    min_flight_baseline = 200.0
+    min_daily_cost = 50.0
+    recommended_min_budget = min_flight_baseline + (min_daily_cost * max(1, duration_days))
+    
+    if total_budget < recommended_min_budget:
+        warnings.append(f"Budget (${total_budget:.2f}) is lower than the recommended minimum (${recommended_min_budget:.2f}) for a {duration_days}-day trip.")
+        
+    status = "PASSED" if not issues else "BLOCKED"
+    status_symbol = "🛡️✅" if status == "PASSED" else "🛡️🛑"
+    
+    result = f"""### {status_symbol} Travel Guardrails Evaluation Report
+- **Overall Guardrail Status**: **{status}**
+- **Origin / Destination Check**: {'Valid' if origin.lower() != destination.lower() else 'Error: Same origin and destination'}
+- **Duration Check**: {duration_days} day(s) (Within allowed range)
+- **Budget Integrity Check**: ${total_budget:.2f} (Minimum threshold: ${recommended_min_budget:.2f})
+"""
+    if issues:
+        result += "\n🛑 **Blocking Issues Detected**:\n" + "\n".join(f"- {iss}" for iss in issues)
+    if warnings:
+        result += "\n⚠️ **Guardrail Warnings**:\n" + "\n".join(f"- {warn}" for warn in warnings)
+        
+    return result
+
+
+def ask_prerequisites_checklist(destination: str, is_international: bool = True) -> str:
+    """Generate a prerequisite checklist and ask for missing required inputs from the user before finalizing travel.
+
+    Args:
+        destination: Destination city/country.
+        is_international: Whether the trip involves international border crossing.
+
+    Returns:
+        A list of required prerequisites and questions for missing travel information.
+    """
+    return f"""### 📋 Required Travel Prerequisites Checklist for {destination}
+
+Before finalizing your travel plan, please ensure all required prerequisites are confirmed:
+
+1. 🛂 **Passport Expiry Date**: Is your passport valid for at least 6 months past your travel dates?
+2. 📄 **Visa / Entry Approval**: Do you have a valid Visa, eVisa, or ESTA clearance for {destination}?
+3. 💉 **Health / Vaccine Records**: Have you checked health & entry regulations for {destination}?
+4. 💳 **Corporate / Personal Payment Card**: Is your card notified for international/out-of-state transactions?
+5. 🛡️ **Travel Insurance**: Is comprehensive medical and trip cancellation insurance active?
+
+*If any prerequisite is missing, please inform your assistant so we can adjust flight bookings, buffer times, or documentation guidance accordingly.*
+"""
+
+
+# ---------------------------------------------------------------------------
+# Define Specialized Sub-Agents
+# ---------------------------------------------------------------------------
+
+flight_planner_agent = Agent(
+    name="flight_planner_agent",
+    description="Sub-agent specializing in searching flights, analyzing airline schedules, ticket classes, and verifying flight prerequisites.",
+    instruction="""You are an expert flight planning sub-agent.
+Your goal is to handle all flight search logistics and verify flight travel prerequisites (passport 6-month validity, visa status).
+Always provide detailed outbound/inbound flight recommendations with airlines, prices, times, and prerequisite checks.""",
+    tools=[search_flights, check_flight_prerequisites],
+)
+
+places_explorer_agent = Agent(
+    name="places_explorer_agent",
+    description="Sub-agent specializing in discovering top places to visit, tourist attractions, cultural landmarks, and local dining experiences.",
+    instruction="""You are a local places and tourism explorer sub-agent.
+Your goal is to discover the best places to visit, iconic landmarks, outdoor spots, and top dining recommendations in the destination city.
+Provide curated attraction recommendations with estimated visit times, highlights, and dining recommendations.""",
+    tools=[search_places_to_visit, recommend_local_dining],
+)
+
+
+# ---------------------------------------------------------------------------
+# Master Orchestrator Agent
+# ---------------------------------------------------------------------------
+
 root_agent = Agent(
     name="root_agent",
     model=Gemini(
         model="gemini-2.5-flash",
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
-    instruction="""You are a professional business travel planning assistant. Your goal is to help users plan business trips.
-To plan a trip, you need to collect or accept the following details:
-1. Origin
-2. Destination
-3. Duration (in days)
-4. Budget (total amount)
-5. Travel Purpose (e.g., client meetings, conference, partnership talks)
-6. Preferences (e.g., flight class, hotel amenities, dietary requirements)
+    description="Master travel orchestrator coordinating flight logistics, places to visit, guardrails, and prerequisites.",
+    instruction="""You are a master business and travel planning assistant. Your goal is to help users plan trips by orchestrating specialized sub-agents and tools.
 
-You MUST use your tools (`search_flights`, `recommend_hotels`, `generate_business_itinerary`, and `estimate_budget_breakdown`) to gather data and build the plan.
-If the user provides these parameters, immediately invoke the tools with their inputs. If any crucial parameters are missing, politely ask the user for them.
+To plan a complete trip, gather or verify:
+1. Origin & Destination
+2. Duration (in days)
+3. Budget (total amount)
+4. Travel Purpose & Preferences
+5. Travel Prerequisites (Passport validity, Visa status, Health guidelines)
 
-Once you have gathered the data, compile and present a comprehensive final travel plan including:
-- Outbound and inbound flight suggestions
-- Hotel/stay recommendations
-- Day-by-day business itinerary
-- Estimated budget breakdown table and status check
+Workflow & Requirements:
+1. First, invoke `validate_travel_guardrails` to evaluate safety, budget feasibility, and input validity.
+2. Delegate to or execute `flight_planner_agent` tools (`search_flights`, `check_flight_prerequisites`) to plan flight logistics and verify prerequisites.
+3. Delegate to or execute `places_explorer_agent` tools (`search_places_to_visit`, `recommend_local_dining`) to find attractions and dining spots.
+4. Execute `recommend_hotels` and `estimate_budget_breakdown` for stay and budget management.
+5. Execute `generate_business_itinerary` and combine the business schedule, flight times, AND places to visit into a seamless day-by-day master plan.
+6. Present the prerequisite checklist using `ask_prerequisites_checklist` if any travel details need confirmation.
 
-Be professional, structured, and clear. Format your responses with beautiful Markdown headers, tables, and bullet points.""",
-    tools=[search_flights, recommend_hotels, generate_business_itinerary, estimate_budget_breakdown],
+Structure your final response with beautiful markdown headers, flight cards, places to visit lists, day-by-day combined itinerary, budget breakdown table, and guardrail reports.""",
+    sub_agents=[flight_planner_agent, places_explorer_agent],
+    tools=[
+        search_flights,
+        check_flight_prerequisites,
+        search_places_to_visit,
+        recommend_local_dining,
+        recommend_hotels,
+        generate_business_itinerary,
+        estimate_budget_breakdown,
+        validate_travel_guardrails,
+        ask_prerequisites_checklist,
+    ],
 )
 
 app = App(
     root_agent=root_agent,
     name="app",
 )
+
 

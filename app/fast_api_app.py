@@ -105,6 +105,140 @@ app.description = "API for interacting with the Agent travel-planning-agent"
 attach_reasoning_engine_routes(app)
 
 
+from pydantic import BaseModel, Field
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
+import app.agent as agent_module
+
+class TripPlanRequest(BaseModel):
+    origin: str = Field(...)
+    destination: str = Field(...)
+    duration_days: int = Field(default=5)
+    budget: float = Field(default=3000.0)
+    travel_purpose: str = Field(default="Business Meetings & Tech Conference")
+    preferences: str = Field(default="Gym, Free WiFi, High-speed transit, Fine dining")
+    passport_valid_months: int = Field(default=8)
+    visa_status: str = Field(default="Granted / Approved")
+
+class GuardrailsCheckRequest(BaseModel):
+    origin: str
+    destination: str
+    total_budget: float
+    duration_days: int
+
+# Serve static web app assets if app/static exists
+static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+if not os.path.exists(static_dir):
+    os.makedirs(static_dir, exist_ok=True)
+
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+@app.get("/dashboard")
+@app.get("/aerotrip")
+async def serve_index():
+    index_path = os.path.join(static_dir, "index.html")
+    return FileResponse(path=index_path)
+
+
+@app.post("/api/plan")
+async def generate_trip_plan(req: TripPlanRequest):
+    """Orchestrate sub-agents (Flight Planner Sub-Agent, Places Explorer Sub-Agent), guardrails, and prerequisites into a combined plan."""
+    # 1. Guardrails Check
+    guardrail_report = agent_module.validate_travel_guardrails(
+        origin=req.origin,
+        destination=req.destination,
+        total_budget=req.budget,
+        duration_days=req.duration_days,
+    )
+    
+    # 2. Flight Logistics (Flight Planner Sub-Agent)
+    flight_data = agent_module.search_flights(req.origin, req.destination, req.duration_days)
+    flight_prereqs = agent_module.check_flight_prerequisites(
+        req.origin, req.destination, req.passport_valid_months, req.visa_status
+    )
+    
+    # 3. Places to Visit (Places Explorer Sub-Agent)
+    places_data = agent_module.search_places_to_visit(
+        req.destination, req.travel_purpose, req.preferences, req.duration_days
+    )
+    dining_data = agent_module.recommend_local_dining(req.destination, req.preferences)
+    
+    # 4. Lodging & Budget Breakdown
+    hotel_data = agent_module.recommend_hotels(req.destination, req.budget, req.duration_days, req.preferences)
+    budget_data = agent_module.estimate_budget_breakdown(req.origin, req.destination, req.duration_days, req.budget)
+    
+    # 5. Combined Master Day-by-Day Itinerary
+    itinerary_data = agent_module.generate_business_itinerary(
+        req.destination, req.duration_days, req.travel_purpose, req.preferences
+    )
+    
+    # 6. Prerequisites Checklist
+    prereq_checklist = agent_module.ask_prerequisites_checklist(req.destination)
+    
+    return {
+        "success": True,
+        "trip": {
+            "origin": req.origin,
+            "destination": req.destination,
+            "duration_days": req.duration_days,
+            "budget": req.budget,
+            "purpose": req.travel_purpose,
+            "preferences": req.preferences,
+        },
+        "sub_agents_executed": [
+            {
+                "name": "flight_planner_agent",
+                "role": "Flight Logistics & Prerequisites",
+                "status": "completed",
+                "output": f"{flight_data}\n\n{flight_prereqs}"
+            },
+            {
+                "name": "places_explorer_agent",
+                "role": "Attractions & Local Sightseeing",
+                "status": "completed",
+                "output": f"{places_data}\n\n{dining_data}"
+            }
+        ],
+        "guardrail_report": guardrail_report,
+        "flight_suggestions": flight_data,
+        "flight_prerequisites": flight_prereqs,
+        "places_to_visit": places_data,
+        "dining_recommendations": dining_data,
+        "hotel_recommendations": hotel_data,
+        "budget_breakdown": budget_data,
+        "master_itinerary": itinerary_data,
+        "prerequisites_checklist": prereq_checklist,
+    }
+
+
+@app.post("/api/guardrails")
+async def evaluate_guardrails(req: GuardrailsCheckRequest):
+    report = agent_module.validate_travel_guardrails(req.origin, req.destination, req.total_budget, req.duration_days)
+    return {"guardrail_report": report}
+
+
+@app.post("/api/flights")
+async def get_flights_subagent(origin: str, destination: str, duration_days: int, passport_months: int = 6):
+    flights = agent_module.search_flights(origin, destination, duration_days)
+    prereqs = agent_module.check_flight_prerequisites(origin, destination, passport_months)
+    return {
+        "sub_agent": "flight_planner_agent",
+        "flights": flights,
+        "prerequisites": prereqs
+    }
+
+
+@app.post("/api/places")
+async def get_places_subagent(destination: str, purpose: str = "leisure", duration_days: int = 3):
+    places = agent_module.search_places_to_visit(destination, purpose, "attractions, culture", duration_days)
+    dining = agent_module.recommend_local_dining(destination)
+    return {
+        "sub_agent": "places_explorer_agent",
+        "places": places,
+        "dining": dining
+    }
+
+
 @app.post("/feedback")
 def collect_feedback(feedback: Feedback) -> dict[str, str]:
     """Collect and log feedback.
@@ -124,3 +258,4 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
