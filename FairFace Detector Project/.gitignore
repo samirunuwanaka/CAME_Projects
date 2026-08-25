@@ -1,0 +1,9 @@
+# cache files
+__pycache__
+
+# dataset
+fairface_sample
+dataset
+
+# future work
+streamlit_app append.py
